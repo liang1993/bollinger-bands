@@ -2,6 +2,8 @@
 
 为个人看盘自建的布林带（Bollinger Bands）行情工具。覆盖 **A 股 + 港股**，参数可调（周期 N / 倍数 K / 时间区间 / K 线粒度），并在图表下方提供一个**只描述状态、不给出买卖建议**的诊断面板。
 
+🔗 在线访问：[bollinger-bands-nine.vercel.app](https://bollinger-bands-nine.vercel.app/?market=sh&code=600519&period=day&fq=qfq&n=20&k=2&range=1Y)
+
 ![Screenshot](./public/screenshot.png)
 
 ## 项目特点
