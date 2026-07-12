@@ -30,7 +30,7 @@
 |---|---|---|
 | K 线（主） | 腾讯财经 `web.ifzq.gtimg.cn` | A 股 + 港股 + 日/周/月/5-60m |
 | K 线（备） | 东方财富 `push2his.eastmoney.com` | A 股 fallback（港股不支持） |
-| 资产搜索 | 东方财富 `searchadapter.eastmoney.com` | 名称 / 拼音 / 代码 |
+| 资产搜索 | 腾讯 `smartbox.gtimg.cn` | 名称 / 拼音 / 代码（东财 suggest 拒绝数据中心出口 IP，Vercel 上不可用，已弃用） |
 
 详见 [DESIGN.md §4](./DESIGN.md#4-数据源调研与选型)。
 

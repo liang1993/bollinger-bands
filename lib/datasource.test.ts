@@ -1,7 +1,7 @@
 // Datasource tests focus on the easy-to-miss contracts:
 //  - Tencent row order is [date, open, close, high, low, volume]
 //  - HK uses 'day' key regardless of fq; A-share qfq uses 'qfqday'
-//  - East Money MktNum maps to our market prefix
+//  - smartbox entries are market~code~\uXXXX-name~pinyin~type, filtered by type
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { fetchKline, searchSymbols, UpstreamError } from "./datasource";
@@ -11,6 +11,12 @@ const realFetch = globalThis.fetch;
 function mockFetchOnce(body: unknown, status = 200) {
   globalThis.fetch = vi.fn().mockResolvedValueOnce(
     new Response(JSON.stringify(body), { status }),
+  );
+}
+
+function mockFetchTextOnce(body: string, status = 200) {
+  globalThis.fetch = vi.fn().mockResolvedValueOnce(
+    new Response(body, { status }),
   );
 }
 
@@ -107,29 +113,30 @@ describe("fetchKline — Tencent normalization", () => {
   });
 });
 
-describe("searchSymbols — East Money mapping", () => {
-  it("maps MktNum 1/0/116 to sh/sz/hk and filters by security type", async () => {
-    mockFetchOnce({
-      QuotationCodeTable: {
-        Data: [
-          { Code: "600519", Name: "贵州茅台", MktNum: "1", SecurityTypeName: "沪A" },
-          { Code: "000858", Name: "五粮液", MktNum: "0", SecurityTypeName: "深A" },
-          { Code: "00700", Name: "腾讯控股", MktNum: "116", SecurityTypeName: "港股" },
-          { Code: "XXX", Name: "某基金", MktNum: "1", SecurityTypeName: "场外基金" },
-          { Code: "YYY", Name: "Unknown", MktNum: "999", SecurityTypeName: "沪A" },
-        ],
-      },
-    });
+describe("searchSymbols — Tencent smartbox mapping", () => {
+  it("keeps sh/sz/hk stocks, decodes names, and drops index/fund/warrant/B-share", async () => {
+    // Real fixture shape from curl (names are \uXXXX-escaped ASCII).
+    mockFetchTextOnce(
+      'v_hint="sh~600519~\\u8d35\\u5dde\\u8305\\u53f0~gzmt~GP-A' +
+        "^sz~300750~\\u5b81\\u5fb7\\u65f6\\u4ee3~ndsd~GP-A" +
+        "^hk~00700~\\u817e\\u8baf\\u63a7\\u80a1~txkg~GP" +
+        "^sh~688981~\\u4e2d\\u82af\\u56fd\\u9645~zxgj~GP-A-KCB" +
+        "^sh~000001~\\u4e0a\\u8bc1\\u6307\\u6570~szzs~ZS" +
+        "^jj~000001~\\u534e\\u590f\\u6210\\u957f~hxcz~KJ" +
+        "^hk~60060~\\u718aB~zyry~QZ-NX" +
+        '^sh~900901~\\u4e91\\u8d5bB\\u80a1~ysbg~GP-B"',
+    );
     const hits = await searchSymbols("test");
     expect(hits.map((h) => `${h.market}${h.code}`)).toEqual([
-      "sh600519", "sz000858", "hk00700",
+      "sh600519", "sz300750", "hk00700", "sh688981",
     ]);
-    expect(hits[0].label).toContain("贵州茅台");
+    expect(hits[0].name).toBe("贵州茅台");
     expect(hits[0].label).toContain("沪A");
+    expect(hits[3].label).toContain("科创板");
   });
 
-  it("returns [] when upstream gives no Data", async () => {
-    mockFetchOnce({ QuotationCodeTable: {} });
+  it("returns [] on the no-match sentinel", async () => {
+    mockFetchTextOnce('v_hint="N";');
     const hits = await searchSymbols("nothing");
     expect(hits).toEqual([]);
   });

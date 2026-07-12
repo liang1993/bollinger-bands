@@ -149,10 +149,12 @@ export class UpstreamError extends Error {
   }
 }
 
-// ---- East Money suggest (search) ----
+// ---- Tencent smartbox (search) ----
+// East Money's searchadapter works from residential IPs but rejects/blackholes
+// requests from datacenter egress (Vercel), so search uses Tencent smartbox —
+// same upstream family as the kline source, which is proven reachable there.
 
-const EM_SUGGEST =
-  "https://searchadapter.eastmoney.com/api/suggest/get?type=14&token=D43BF722C8E33BDC906FB84D85E326E8";
+const SMARTBOX = "https://smartbox.gtimg.cn/s3/?v=2&t=all";
 
 export interface SearchHit {
   market: Market;
@@ -161,58 +163,56 @@ export interface SearchHit {
   label: string;
 }
 
-interface EmRow {
-  Code: string;
-  Name: string;
-  MktNum: string;
-  SecurityTypeName: string;
+/**
+ * Accept only tradable stocks in our three markets; everything else in the
+ * smartbox mix (ZS index, KJ fund, QZ warrant, GP-B B-share) is dropped.
+ * Returns the Chinese type label for display, or null to drop the row.
+ */
+function acceptType(market: Market, type: string): string | null {
+  if (market === "hk") return type === "GP" ? "港股" : null;
+  if (type === "GP-A") return market === "sh" ? "沪A" : "深A";
+  if (type === "GP-A-KCB") return "科创板";
+  return null;
 }
 
-interface EmResponse {
-  QuotationCodeTable?: { Data?: EmRow[] };
+/** Names arrive as ASCII with \uXXXX escapes (even under the GBK header). */
+function decodeUnicodeEscapes(s: string): string {
+  return s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h: string) =>
+    String.fromCharCode(parseInt(h, 16)),
+  );
 }
 
-/** Map East Money MktNum → our market prefix. */
-function mapMarket(mktNum: string): Market | null {
-  switch (mktNum) {
-    case "1":
-      return "sh";
-    case "0":
-      return "sz";
-    case "116":
-      return "hk";
-    default:
-      return null;
-  }
-}
-
-const ALLOWED_TYPE_NAMES = new Set([
-  "沪A",
-  "深A",
-  "港股",
-  "创业板",
-  "科创板",
-]);
+const MARKETS = new Set<Market>(["sh", "sz", "hk"]);
 
 export async function searchSymbols(
   q: string,
   signal?: AbortSignal,
 ): Promise<SearchHit[]> {
-  const url = `${EM_SUGGEST}&count=10&input=${encodeURIComponent(q)}`;
+  const url = `${SMARTBOX}&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { signal });
-  if (!res.ok) throw new UpstreamError(`eastmoney http ${res.status}`, "upstream_http");
-  const json = (await res.json()) as EmResponse;
-  const rows = json.QuotationCodeTable?.Data ?? [];
+  if (!res.ok) throw new UpstreamError(`smartbox http ${res.status}`, "upstream_http");
+  const text = await res.text();
+
+  // Body is `v_hint="entry^entry^..."` where entry = market~code~name~pinyin~type;
+  // no match yields `v_hint="N"`.
+  const payload = text.match(/"([^"]*)"/)?.[1] ?? "";
+  if (!payload || payload === "N") return [];
+
   const out: SearchHit[] = [];
-  for (const r of rows) {
-    const market = mapMarket(r.MktNum);
-    if (!market) continue;
-    if (!ALLOWED_TYPE_NAMES.has(r.SecurityTypeName)) continue;
+  for (const entry of payload.split("^")) {
+    const parts = entry.split("~");
+    if (parts.length < 5) continue;
+    const [mkt, code, rawName, , type] = parts;
+    if (!MARKETS.has(mkt as Market)) continue;
+    const market = mkt as Market;
+    const typeName = acceptType(market, type);
+    if (!typeName) continue;
+    const name = decodeUnicodeEscapes(rawName);
     out.push({
       market,
-      code: r.Code,
-      name: r.Name,
-      label: `${r.Name} (${market}${r.Code} ${r.SecurityTypeName})`,
+      code,
+      name,
+      label: `${name} (${market}${code} ${typeName})`,
     });
   }
   return out;

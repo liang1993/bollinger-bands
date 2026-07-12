@@ -70,7 +70,7 @@
 │                                                             │
 │   /api/kline   ──► 腾讯财经 (主)                             │
 │                  └─ fallback ──► 东方财富 (A股 only)         │
-│   /api/search  ──► 东方财富 suggest                          │
+│   /api/search  ──► 腾讯 smartbox                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -87,7 +87,8 @@
 |---|---|---|---|---|---|
 | **腾讯财经** `web.ifzq.gtimg.cn` | ✅ qfq/hfq | ✅ | 不需 | 130-240ms | **主** |
 | **东方财富** `push2his.eastmoney.com` | ✅ | ❌ 返回空（实测加 UA/Referer 也不行） | 不需 | ~200ms | A股 fallback |
-| 东方财富 suggest `searchadapter.eastmoney.com` | ✅ | ✅ | 内置 token | <200ms | **搜索** |
+| 腾讯 smartbox `smartbox.gtimg.cn` | ✅ | ✅ | 不需 | <200ms | **搜索** |
+| 东方财富 suggest `searchadapter.eastmoney.com` | ✅ | ✅ | 内置 token | <200ms | ❌ 本地可用，但拒绝数据中心出口 IP（Vercel 上超时/无响应） |
 | AkShare / TuShare | ✅ | ✅ | TuShare 要 token | Python 生态 | ❌ 与 Next.js 不匹配 |
 | Yahoo Finance | 部分 | 部分 | 不需 | 慢 | ❌ 国内访问不稳 |
 
@@ -119,14 +120,15 @@ GET https://web.ifzq.gtimg.cn/appstock/app/fqkline/get
 - 响应字段路径：`data.{market}{code}.{fqType+period}`，例如 `data.sh600519.qfqday`、`data.hk00700.day`
 - 每行数组：`[date, open, close, high, low, volume, ...extra]`（**注意：close 在 high/low 之前**）
 
-#### 4.3.2 东方财富 suggest（搜索）
+#### 4.3.2 腾讯 smartbox（搜索）
 ```
-GET https://searchadapter.eastmoney.com/api/suggest/get
-  ?input={q}&type=14&token=D43BF722C8E33BDC906FB84D85E326E8&count=10
+GET https://smartbox.gtimg.cn/s3/?v=2&t=all&q={q}
 ```
-- 响应 `QuotationCodeTable.Data[]`
-- `MktNum`：`1`=沪、`0`=深、`116`=港，需映射为腾讯接口的 `sh` / `sz` / `hk`
-- 过滤掉 `SecurityTypeName` 不在 `{沪A, 深A, 港股, 创业板, 科创板}` 的项
+- 响应为文本 `v_hint="entry^entry^..."`，无结果时 `v_hint="N"`
+- entry 格式：`market~code~name~pinyin~type`，name 是 `\uXXXX` 转义的 ASCII（响应头虽标 GBK，内容无需 GBK 解码）
+- `market` 直接就是 `sh` / `sz` / `hk`（另有 `jj` 基金、`us` 美股等，丢弃）
+- `type` 过滤：保留 `GP-A`（沪A/深A，含创业板）、`GP-A-KCB`（科创板）、`GP`（港股）；丢弃 `ZS` 指数、`KJ` 基金、`QZ` 权证、`GP-B` B股
+- 历史备注：v1 曾用东方财富 suggest（`searchadapter.eastmoney.com`），本地开发一切正常，但部署到 Vercel（hkg1）后该域名拒绝数据中心出口 IP，搜索全挂且前端表现为「无结果」，故切换到与 K 线同源的腾讯 smartbox
 
 ---
 

@@ -17,7 +17,7 @@ A personal-use Next.js 14 web app that displays Bollinger Bands over candlestick
 ```
 Browser (URL query → SWR) ──► Next.js Route Handlers ──► Tencent Finance (primary)
                                                          └─ East Money (A-share fallback)
-                              /api/search ─────────────► East Money suggest
+                              /api/search ─────────────► Tencent smartbox
 ```
 
 - Bollinger Bands are computed **client-side** in `lib/indicators.ts` (pure function over close prices). Changing N/K does **not** refetch data.
@@ -30,6 +30,7 @@ These are easy to miss and have already cost research time:
 
 - **Tencent kline endpoint caps a single response at ~800 daily candles** (≈ 3 years). The `from`/`to` params do **not** allow backfilling older history — only the most recent N candles are returned regardless. UI must cap day-K range at 3Y; longer history requires switching to weekly/monthly.
 - **East Money kline returns empty for HK stocks** even with UA / Referer. East Money is A-share fallback only; HK has no fallback.
+- **East Money suggest (`searchadapter.eastmoney.com`) rejects datacenter egress IPs**: works in local dev, silently dead on Vercel (hkg1) — the frontend shows it as "no results". Search therefore uses Tencent smartbox (`smartbox.gtimg.cn`), same upstream family as kline. Do not switch search back to East Money.
 - **Tencent response field path depends on `fq` + `period`**: e.g. `data.sh600519.qfqday` for A-share qfq, but `data.hk00700.day` for HK (no `qfq` prefix). The datasource layer must normalize this.
 - **Tencent row order is `[date, open, close, high, low, volume, ...]`** — `close` is in position 2, before `high`/`low`. Off-by-one here breaks the chart silently.
 - **Bollinger stddev uses sample stddev (divide by N-1)** to match TradingView Pine Script `stdev`. Population stddev would differ slightly from the reference.
